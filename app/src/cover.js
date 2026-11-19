@@ -2,8 +2,10 @@
 // Everything on the poster is drawn here in code — gradient skies, a slatted
 // synthwave sun, skyline and palm silhouettes, halftone dots and bold condensed
 // lettering — so the art is original and the poster looks rich even before a
-// photo is loaded. All randomness is seeded, so the same state draws the same
-// bytes every time.
+// photo is loaded. Every photo panel is redrawn through the cartoon filter
+// (posterized flat colours + dark comic outlines), so any uploaded photo comes
+// out as GTA-style illustration, never a plain photograph. All randomness is
+// seeded, so the same state draws the same bytes every time.
 
 import { GRADES } from './grades.js';
 import { LAYOUTS } from './layouts.js';
@@ -214,6 +216,67 @@ function drawPhotoCover(ctx, img, r, panel) {
   ctx.drawImage(img, cx - pw / 2, cy - ph / 2, pw, ph);
 }
 
+function clamp255(v) {
+  return v < 0 ? 0 : v > 255 ? 255 : v;
+}
+
+/**
+ * The cartoon treatment: redraws a photo panel as flat comic art. The photo is
+ * painted onto an offscreen canvas at panel size, then every pixel is pushed
+ * through a saturation boost and quantized to five flat steps per channel,
+ * and a Sobel edge pass inks dark outlines where the picture changes sharply.
+ * Pure pixel math, no randomness — the same photo always cartoons the same way.
+ */
+function drawCartoonPhoto(ctx, img, r, panel) {
+  const w = Math.max(2, Math.round(r.w));
+  const h = Math.max(2, Math.round(r.h));
+  const off = document.createElement('canvas');
+  off.width = w;
+  off.height = h;
+  const o = off.getContext('2d');
+  drawPhotoCover(o, img, { x: 0, y: 0, w, h }, panel);
+  const image = o.getImageData(0, 0, w, h);
+  const d = image.data;
+  const levels = 5;
+  const step = 255 / (levels - 1);
+  const lum = new Float32Array(w * h);
+  for (let p = 0; p < d.length; p += 4) {
+    const i = p / 4;
+    const r0 = d[p];
+    const g0 = d[p + 1];
+    const b0 = d[p + 2];
+    lum[i] = 0.299 * r0 + 0.587 * g0 + 0.114 * b0;
+    const avg = (r0 + g0 + b0) / 3;
+    d[p] = clamp255(Math.round((avg + (r0 - avg) * 1.3) / step) * step);
+    d[p + 1] = clamp255(Math.round((avg + (g0 - avg) * 1.3) / step) * step);
+    d[p + 2] = clamp255(Math.round((avg + (b0 - avg) * 1.3) / step) * step);
+  }
+  // Ink the outlines: where luminance jumps between neighbours, darken toward ink.
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      const gx =
+        Math.abs(lum[i - 1] - lum[i + 1]) +
+        0.5 * Math.abs(lum[i - w - 1] - lum[i - w + 1]) +
+        0.5 * Math.abs(lum[i + w - 1] - lum[i + w + 1]);
+      const gy =
+        Math.abs(lum[i - w] - lum[i + w]) +
+        0.5 * Math.abs(lum[i - w - 1] - lum[i + w - 1]) +
+        0.5 * Math.abs(lum[i - w + 1] - lum[i + w + 1]);
+      const mag = gx + gy;
+      if (mag > 46) {
+        const p = i * 4;
+        const k = Math.min(1, (mag - 46) / 90);
+        d[p] = d[p] * (1 - k) + 18 * k;
+        d[p + 1] = d[p + 1] * (1 - k) + 12 * k;
+        d[p + 2] = d[p + 2] * (1 - k) + 20 * k;
+      }
+    }
+  }
+  o.putImageData(image, 0, 0);
+  ctx.drawImage(off, r.x, r.y, r.w, r.h);
+}
+
 /** The grade's wash over a panel: a sunset or neon tint, strongest at the foot. */
 function applyWash(ctx, r, grade) {
   const wash = ctx.createLinearGradient(0, r.y, 0, r.y + r.h);
@@ -373,7 +436,7 @@ export function drawCover(ctx, W, H, state) {
     roundRectPath(ctx, r.x, r.y, r.w, r.h, corner);
     ctx.clip();
     const img = state.photos ? state.photos.get(panel.src) : null;
-    if (img) drawPhotoCover(ctx, img, r, panel);
+    if (img) drawCartoonPhoto(ctx, img, r, panel);
     else drawScene(ctx, r, grade);
     applyWash(ctx, r, grade);
     drawVignette(ctx, r);

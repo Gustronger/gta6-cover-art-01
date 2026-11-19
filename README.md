@@ -11,8 +11,13 @@ neon colour grade, exported as a PNG to share. Entry for the make.fun bounty
 
 ## What it does
 
-- **Any photo** — upload your own (file picker or drag & drop) or try the two
-  bundled samples. Each panel takes its own photo, or a procedural sunset
+- **Any photo, drawn as a cartoon** — upload your own (file picker or
+  drag & drop) or try the two bundled samples, both original cartoon
+  illustrations: a woman with sunglasses leaning on a red convertible at
+  sunset, and a man in a bucket hat fishing from a pier. Every photo panel
+  runs through the cartoon filter — posterized flat colours with dark comic
+  outlines — so any upload comes out as GTA-style illustration, never a
+  plain photograph. Each panel takes its own photo, or a procedural sunset
   scene the app draws itself.
 - **Four poster layouts** — Hero Duo, Four Panel, Full Bleed and Neon Strip.
   Click a panel in the preview to select it, then crop it with the zoom and
@@ -38,14 +43,15 @@ on your own machine and never uploaded anywhere.
 - `app/index.html` — the editor page.
 - `app/style.css` — the dark studio shell.
 - `app/src/main.js` — wires the editor: photos, panels, export.
-- `app/src/cover.js` — the cover renderer: panels, grades, procedural
-  sunset art (slatted sun, skyline and palm silhouettes, halftone dots) and
-  the title band.
+- `app/src/cover.js` — the cover renderer: panels, grades, the cartoon
+  filter (posterized flat colours + dark comic outlines for every photo
+  panel), procedural sunset art (slatted sun, skyline and palm silhouettes,
+  halftone dots) and the title band.
 - `app/src/grades.js` — the four grade palettes.
 - `app/src/layouts.js` — the four panel layouts.
 - `app/src/shots.js` — the fixed `?shot=` scenes used for screenshots.
-- `app/samples/` — the two bundled sample photos, made for make.fun and
-  free to use.
+- `app/samples/` — the two bundled sample illustrations: original
+  flat-vector cartoon art generated for this entry (no real people).
 - `main.ts` — the entry program: copies `app/` and `screenshots/` to the
   output directory and writes `dossier.json` with `vendor/makefun-app.ts`.
 
@@ -53,4 +59,6 @@ on your own machine and never uploaded anywhere.
 
 All art, lettering and fonts in this app are original and drawn in code. There
 is no Rockstar Games logo, no official GTA artwork and no Rockstar font
-anywhere in it; the lettering uses only the system font stack.
+anywhere in it; the lettering uses only the system font stack. The sample
+illustrations are original cartoon art made for this entry, and no photograph
+of a real person appears anywhere in the app or its screenshots.
