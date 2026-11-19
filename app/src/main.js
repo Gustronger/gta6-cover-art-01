@@ -17,17 +17,43 @@ const SIZES = [
 
 const SAMPLE_NAMES = { boulevard: 'Boulevard', pier: 'Pier' };
 
+/** The caption a panel gets when it takes a photo: place, time, tagline, label. */
+const CAPTION_DEFAULTS = {
+  boulevard: { place: 'OCEAN DRIVE', time: '6:42 PM', tag: 'LOOKING FOR TROUBLE', label: 'THE DRIVER' },
+  pier: { place: 'PIER 26', time: '5:30 AM', tag: 'GONE FISHING', label: 'THE ANGLER' },
+  art: { place: 'VICE CITY', time: '12:00 AM', tag: 'SKYLINE AFTER DARK', label: '' },
+};
+
+function captionFor(src) {
+  if (typeof src === 'string' && src.startsWith('up')) {
+    return { place: 'YOUR STREET', time: 'RIGHT NOW', tag: 'SHOT BY YOU', label: 'THE STAR' };
+  }
+  return CAPTION_DEFAULTS[src] || CAPTION_DEFAULTS.art;
+}
+
+function blankPanel(src) {
+  return { src, zoom: 1, ox: 0, oy: 0, ...captionFor(src) };
+}
+
 const state = {
-  layout: 'duo',
+  layout: 'show',
   grade: 'sunset',
   size: '1080x1080',
   title: 'VICE COAST',
-  subtitle: 'SUNSET HEIST • LEONIDA',
+  subtitle: 'Neon Tide',
+  quote: '"HOTTER THAN THE ASPHALT" — THE PALM GAZETTE',
+  stars: 5,
+  tagline: 'ONE COAST · NO RULES · COMING SOON',
+  footer: 'VICE COAST COVER STUDIO · STARRING YOU · SHOT ON YOUR OWN CAMERA · CAT. VC-0626',
+  badges: { seal: true, est: true, vol: true, collector: true, wanted: true },
   panels: [
-    { src: 'boulevard', zoom: 1, ox: 0, oy: 0 },
-    { src: 'pier', zoom: 1, ox: 0, oy: 0 },
-    { src: 'art', zoom: 1, ox: 0, oy: 0 },
-    { src: 'art', zoom: 1, ox: 0, oy: 0 },
+    blankPanel('boulevard'),
+    blankPanel('pier'),
+    blankPanel('art'),
+    blankPanel('art'),
+    blankPanel('art'),
+    blankPanel('art'),
+    blankPanel('art'),
   ],
   selected: 0,
   photos: new Map(),
@@ -55,10 +81,15 @@ function currentLayout() {
 function ensurePanels() {
   const count = currentLayout().count;
   while (state.panels.length < count) {
-    state.panels.push({ src: 'art', zoom: 1, ox: 0, oy: 0 });
+    state.panels.push(blankPanel('art'));
   }
   state.panels.length = count;
   if (state.selected >= count) state.selected = 0;
+}
+
+/** Gives a panel a photo and the caption that photo comes with. */
+function setPanelSrc(i, src) {
+  state.panels[i] = { ...state.panels[i], src, ...captionFor(src) };
 }
 
 /** Loads an image from a URL, resolving once it can be drawn. */
@@ -122,7 +153,7 @@ function syncPanelControls() {
     b.textContent = choice.label;
     b.classList.toggle('active', panel.src === choice.id);
     b.addEventListener('click', () => {
-      panel.src = choice.id;
+      setPanelSrc(state.selected, choice.id);
       renderPreview();
     });
     src.appendChild(b);
@@ -130,6 +161,10 @@ function syncPanelControls() {
   zoomRange.value = String(panel.zoom);
   panXRange.value = String(panel.ox);
   panYRange.value = String(panel.oy);
+  document.getElementById('placeInput').value = panel.place || '';
+  document.getElementById('timeInput').value = panel.time || '';
+  document.getElementById('panelTagInput').value = panel.tag || '';
+  document.getElementById('labelInput').value = panel.label || '';
 }
 
 function buildButtonRow(containerId, items, activeId, onPick) {
@@ -178,6 +213,31 @@ function syncOptionRows() {
   );
 }
 
+/** The badge toggles: seal, roundel, volume, ribbon and wanted tag. */
+function syncBadges() {
+  const items = [
+    { id: 'seal', label: 'Seal' },
+    { id: 'est', label: 'EST. 2026' },
+    { id: 'vol', label: 'VOL. 01' },
+    { id: 'collector', label: "Collector's" },
+    { id: 'wanted', label: 'WANTED' },
+  ];
+  const box = document.getElementById('badgeBtns');
+  box.replaceChildren();
+  for (const item of items) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = item.label;
+    b.classList.toggle('active', !!state.badges[item.id]);
+    b.addEventListener('click', () => {
+      state.badges[item.id] = !state.badges[item.id];
+      renderPreview();
+      syncBadges();
+    });
+    box.appendChild(b);
+  }
+}
+
 /** Renders the cover at full export size and downloads it as a PNG. */
 export function exportPng() {
   const size = currentSize();
@@ -211,7 +271,7 @@ async function addUpload(file) {
   const id = `up${uploadCount++}`;
   const img = await loadImage(URL.createObjectURL(file));
   state.photos.set(id, img);
-  state.panels[state.selected].src = id;
+  setPanelSrc(state.selected, id);
   renderPreview();
   status.textContent = `Loaded ${file.name} into panel ${state.selected + 1}`;
 }
@@ -241,25 +301,25 @@ function setSubtitle(text) {
 }
 
 /** The cover scene: the cover alone, filling the viewport, for a screenshot. */
-async function showCoverShot(photo, caption) {
+async function showCoverShot(photo, caption, script) {
   await loadSample(photo);
   const other = photo === 'pier' ? 'boulevard' : 'pier';
   await loadSample(other);
-  state.panels[0].src = photo;
-  state.panels[1].src = other;
+  setPanelSrc(0, photo);
+  setPanelSrc(1, other);
   setTitle(caption);
-  setSubtitle('VICE CITY • LEONIDA');
+  setSubtitle(script || 'Neon Tide');
   preview.width = window.innerWidth;
   preview.height = window.innerHeight;
   drawCover(preview.getContext('2d'), preview.width, preview.height, state);
 }
 
 /** The editor scene: the editor with a sample photo loaded, for a screenshot. */
-async function showEditorShot(photo, caption) {
+async function showEditorShot(photo, caption, script) {
   await loadSample(photo);
-  state.panels[state.selected].src = photo;
+  setPanelSrc(state.selected, photo);
   setTitle(caption);
-  setSubtitle('VICE CITY • LEONIDA');
+  setSubtitle(script || 'Neon Tide');
   renderPreview();
 }
 
@@ -271,6 +331,39 @@ titleInput.addEventListener('input', () => {
 });
 subtitleInput.addEventListener('input', () => {
   state.subtitle = subtitleInput.value;
+  renderPreview();
+});
+document.getElementById('quoteInput').addEventListener('input', (e) => {
+  state.quote = e.target.value;
+  renderPreview();
+});
+document.getElementById('taglineInput').addEventListener('input', (e) => {
+  state.tagline = e.target.value;
+  renderPreview();
+});
+document.getElementById('footerInput').addEventListener('input', (e) => {
+  state.footer = e.target.value;
+  renderPreview();
+});
+document.getElementById('starsRange').addEventListener('input', (e) => {
+  state.stars = Number(e.target.value);
+  document.getElementById('starsValue').textContent = '★'.repeat(state.stars) + '☆'.repeat(5 - state.stars);
+  renderPreview();
+});
+document.getElementById('placeInput').addEventListener('input', (e) => {
+  state.panels[state.selected].place = e.target.value;
+  renderPreview();
+});
+document.getElementById('timeInput').addEventListener('input', (e) => {
+  state.panels[state.selected].time = e.target.value;
+  renderPreview();
+});
+document.getElementById('panelTagInput').addEventListener('input', (e) => {
+  state.panels[state.selected].tag = e.target.value;
+  renderPreview();
+});
+document.getElementById('labelInput').addEventListener('input', (e) => {
+  state.panels[state.selected].label = e.target.value;
   renderPreview();
 });
 zoomRange.addEventListener('input', () => {
@@ -286,7 +379,10 @@ panYRange.addEventListener('input', () => {
   renderPreview();
 });
 document.getElementById('resetPanelBtn').addEventListener('click', () => {
-  state.panels[state.selected] = { src: 'art', zoom: 1, ox: 0, oy: 0 };
+  setPanelSrc(state.selected, 'art');
+  state.panels[state.selected].zoom = 1;
+  state.panels[state.selected].ox = 0;
+  state.panels[state.selected].oy = 0;
   renderPreview();
 });
 document.getElementById('exportBtn').addEventListener('click', exportPng);
@@ -296,12 +392,12 @@ document.getElementById('photoInput').addEventListener('change', async (e) => {
 });
 document.getElementById('sampleBoulevard').addEventListener('click', async () => {
   await loadSample('boulevard');
-  state.panels[state.selected].src = 'boulevard';
+  setPanelSrc(state.selected, 'boulevard');
   renderPreview();
 });
 document.getElementById('samplePier').addEventListener('click', async () => {
   await loadSample('pier');
-  state.panels[state.selected].src = 'pier';
+  setPanelSrc(state.selected, 'pier');
   renderPreview();
 });
 
@@ -330,6 +426,7 @@ preview.addEventListener('click', (e) => {
 });
 
 syncOptionRows();
+syncBadges();
 
 const shot = new URLSearchParams(location.search).get('shot');
 if (shot) {

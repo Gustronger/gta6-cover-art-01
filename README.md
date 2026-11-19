@@ -19,13 +19,25 @@ neon colour grade, exported as a PNG to share. Entry for the make.fun bounty
   outlines — so any upload comes out as GTA-style illustration, never a
   plain photograph. Each panel takes its own photo, or a procedural sunset
   scene the app draws itself.
-- **Four poster layouts** — Hero Duo, Four Panel, Full Bleed and Neon Strip.
+- **Five poster layouts** — Showcase (one large anchor panel plus six
+  captioned panels), Hero Duo, Four Panel, Full Bleed and Neon Strip.
   Click a panel in the preview to select it, then crop it with the zoom and
   pan sliders.
 - **Four colour grades** — Sunset, Neon Night, Vice Pink and Golden Hour.
   Each grade repaints the sky, the sun, the photo wash and the lettering.
-- **Your own words** — edit the title and subtitle; the lettering is drawn
-  in bold condensed capitals with a gradient fill and a dark outline.
+- **A cover packed with information** — every panel carries its own
+  caption chip (place, time and tagline) and photo panels carry a tilted
+  character label ("THE DRIVER", "THE ANGLER"). Above the title sit five
+  gold stars and a fictional newspaper quote; the title band adds a
+  starburst "ORIGINAL COVER ART" seal, an "EST. 2026" roundel, a "VOL. 01"
+  badge and a "COLLECTOR'S EDITION" ribbon, plus a "WANTED ★★★★★" tag in
+  the corner. A tagline strip runs under the title and a dense footer
+  (studio, "STARRING YOU", "SHOT ON YOUR OWN CAMERA", catalogue number and
+  a barcode drawn in code) closes the cover. Every word is editable and
+  every badge can be switched off.
+- **Your own words** — edit the title, the pink script line under it, the
+  quote, the tagline and the footer; the lettering is drawn in bold
+  condensed capitals with a gradient fill and a dark outline.
 - **One-click export** — PNG at 1080 × 1080, 1080 × 1350 or 1920 × 1080.
 
 ## How to use it
@@ -46,9 +58,12 @@ on your own machine and never uploaded anywhere.
 - `app/src/cover.js` — the cover renderer: panels, grades, the cartoon
   filter (posterized flat colours + dark comic outlines for every photo
   panel), procedural sunset art (slatted sun, skyline and palm silhouettes,
-  halftone dots) and the title band.
+  halftone dots), per-panel caption chips and character labels, the star
+  rating and newspaper quote, the starburst seal and badges, the tagline
+  strip, the dense footer with a barcode, and the title band.
 - `app/src/grades.js` — the four grade palettes.
-- `app/src/layouts.js` — the four panel layouts.
+- `app/src/layouts.js` — the five panel layouts and the cover's frame and
+  band zones (panel zone, quote strip, title band, tagline strip, footer).
 - `app/src/shots.js` — the fixed `?shot=` scenes used for screenshots.
 - `app/samples/` — the two bundled sample illustrations: original
   flat-vector cartoon art generated for this entry (no real people).

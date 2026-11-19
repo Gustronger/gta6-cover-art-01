@@ -1,7 +1,33 @@
 // Panel layouts for the cover renderer (cover.js). A layout is a function of the
-// cover size that returns the panel rectangles in pixels, in draw order. The
-// title band is drawn over the bottom of the panels by the renderer, so every
-// layout reserves its lower fifth for the lettering.
+// cover size that returns the panel rectangles in pixels, in draw order.
+//
+// The cover is framed: an outer frame, then a panel zone, then a quote strip,
+// the title band, a tagline strip and a dense footer. Layouts return rects
+// inside the panel zone only — the lettering below it never overlaps a panel,
+// so per-panel captions always stay legible.
+
+/** The cover's vertical zones: frame, panel zone, quote, title band, strip, footer. */
+export function coverZones(W, H) {
+  const frame = Math.max(8, Math.round(Math.min(W, H) * 0.011));
+  const quoteH = Math.round(H * 0.042);
+  const bandH = Math.round(H * 0.16);
+  const stripH = Math.round(H * 0.045);
+  const footH = Math.round(H * 0.05);
+  const zoneH = H - frame * 2 - quoteH - bandH - stripH - footH;
+  const zone = { x: frame, y: frame, w: W - frame * 2, h: zoneH };
+  return {
+    frame,
+    quoteH,
+    bandH,
+    stripH,
+    footH,
+    zone,
+    quoteY: frame + zoneH,
+    bandY: frame + zoneH + quoteH,
+    stripY: frame + zoneH + quoteH + bandH,
+    footY: frame + zoneH + quoteH + bandH + stripH,
+  };
+}
 
 function insetRects(rects, gap) {
   return rects.map((r) => ({
@@ -12,23 +38,50 @@ function insetRects(rects, gap) {
   }));
 }
 
+/** Maps unit-space rects (fractions of the panel zone) to pixels, with a gap. */
+function zoneRects(W, H, rects) {
+  const z = coverZones(W, H);
+  const g = Math.max(4, Math.round(Math.min(W, H) * 0.008));
+  return insetRects(
+    rects.map((r) => ({
+      x: z.zone.x + r.x * z.zone.w,
+      y: z.zone.y + r.y * z.zone.h,
+      w: r.w * z.zone.w,
+      h: r.h * z.zone.h,
+    })),
+    g,
+  );
+}
+
 export const LAYOUTS = {
+  show: {
+    id: 'show',
+    name: 'Showcase',
+    count: 7,
+    panels(W, H) {
+      // One large anchor panel on the left, six captioned panels in a 2x3 grid.
+      return zoneRects(W, H, [
+        { x: 0, y: 0, w: 0.42, h: 1 },
+        { x: 0.42, y: 0, w: 0.29, h: 1 / 3 },
+        { x: 0.71, y: 0, w: 0.29, h: 1 / 3 },
+        { x: 0.42, y: 1 / 3, w: 0.29, h: 1 / 3 },
+        { x: 0.71, y: 1 / 3, w: 0.29, h: 1 / 3 },
+        { x: 0.42, y: 2 / 3, w: 0.29, h: 1 / 3 },
+        { x: 0.71, y: 2 / 3, w: 0.29, h: 1 / 3 },
+      ]);
+    },
+  },
   duo: {
     id: 'duo',
     name: 'Hero Duo',
     count: 4,
     panels(W, H) {
-      const g = Math.max(4, Math.round(Math.min(W, H) * 0.008));
-      const topH = H * 0.6;
-      return insetRects(
-        [
-          { x: 0, y: 0, w: W * 0.62, h: topH },
-          { x: W * 0.62, y: 0, w: W * 0.38, h: topH },
-          { x: 0, y: topH, w: W * 0.5, h: H - topH },
-          { x: W * 0.5, y: topH, w: W * 0.5, h: H - topH },
-        ],
-        g,
-      );
+      return zoneRects(W, H, [
+        { x: 0, y: 0, w: 0.62, h: 0.6 },
+        { x: 0.62, y: 0, w: 0.38, h: 0.6 },
+        { x: 0, y: 0.6, w: 0.5, h: 0.4 },
+        { x: 0.5, y: 0.6, w: 0.5, h: 0.4 },
+      ]);
     },
   },
   grid: {
@@ -36,16 +89,12 @@ export const LAYOUTS = {
     name: 'Four Panel',
     count: 4,
     panels(W, H) {
-      const g = Math.max(4, Math.round(Math.min(W, H) * 0.008));
-      return insetRects(
-        [
-          { x: 0, y: 0, w: W / 2, h: H / 2 },
-          { x: W / 2, y: 0, w: W / 2, h: H / 2 },
-          { x: 0, y: H / 2, w: W / 2, h: H / 2 },
-          { x: W / 2, y: H / 2, w: W / 2, h: H / 2 },
-        ],
-        g,
-      );
+      return zoneRects(W, H, [
+        { x: 0, y: 0, w: 0.5, h: 0.5 },
+        { x: 0.5, y: 0, w: 0.5, h: 0.5 },
+        { x: 0, y: 0.5, w: 0.5, h: 0.5 },
+        { x: 0.5, y: 0.5, w: 0.5, h: 0.5 },
+      ]);
     },
   },
   full: {
@@ -53,7 +102,9 @@ export const LAYOUTS = {
     name: 'Full Bleed',
     count: 1,
     panels(W, H) {
-      return [{ x: 0, y: 0, w: W, h: H }];
+      // No gap: the one panel fills the whole zone.
+      const z = coverZones(W, H);
+      return [{ x: z.zone.x, y: z.zone.y, w: z.zone.w, h: z.zone.h }];
     },
   },
   strip: {
@@ -61,28 +112,21 @@ export const LAYOUTS = {
     name: 'Neon Strip',
     count: 3,
     panels(W, H) {
-      const g = Math.max(4, Math.round(Math.min(W, H) * 0.008));
       // Portrait covers stack the panels; landscape covers line them up.
       if (H >= W) {
-        return insetRects(
-          [
-            { x: 0, y: 0, w: W, h: H / 3 },
-            { x: 0, y: H / 3, w: W, h: H / 3 },
-            { x: 0, y: (H / 3) * 2, w: W, h: H / 3 },
-          ],
-          g,
-        );
+        return zoneRects(W, H, [
+          { x: 0, y: 0, w: 1, h: 1 / 3 },
+          { x: 0, y: 1 / 3, w: 1, h: 1 / 3 },
+          { x: 0, y: 2 / 3, w: 1, h: 1 / 3 },
+        ]);
       }
-      return insetRects(
-        [
-          { x: 0, y: 0, w: W / 3, h: H },
-          { x: W / 3, y: 0, w: W / 3, h: H },
-          { x: (W / 3) * 2, y: 0, w: W / 3, h: H },
-        ],
-        g,
-      );
+      return zoneRects(W, H, [
+        { x: 0, y: 0, w: 1 / 3, h: 1 },
+        { x: 1 / 3, y: 0, w: 1 / 3, h: 1 },
+        { x: 2 / 3, y: 0, w: 1 / 3, h: 1 },
+      ]);
     },
   },
 };
 
-export const LAYOUT_ORDER = ['duo', 'grid', 'full', 'strip'];
+export const LAYOUT_ORDER = ['show', 'duo', 'grid', 'full', 'strip'];

@@ -8,7 +8,7 @@
 // seeded, so the same state draws the same bytes every time.
 
 import { GRADES } from './grades.js';
-import { LAYOUTS } from './layouts.js';
+import { LAYOUTS, coverZones } from './layouts.js';
 
 /** A seeded pseudo-random stream (LCG): the same seed draws the same skyline. */
 function lcg(seed) {
@@ -379,11 +379,382 @@ function drawHalftone(ctx, x, y, w, h, color) {
   ctx.restore();
 }
 
+/** One five-pointed star, centred at (cx, cy) with outer radius r. */
+function drawStar(ctx, cx, cy, r, fill, stroke) {
+  ctx.save();
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const ang = (i / 10) * Math.PI * 2 - Math.PI / 2;
+    const rad = i % 2 === 0 ? r : r * 0.45;
+    const x = cx + Math.cos(ang) * rad;
+    const y = cy + Math.sin(ang) * rad;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  if (fill) {
+    ctx.fillStyle = fill;
+    ctx.fill();
+  }
+  if (stroke) {
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = Math.max(1, r * 0.12);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** A row of five stars, left-aligned from x, `count` of them filled gold. */
+function drawStarsRow(ctx, x, cy, size, count, color = '#ffd166') {
+  const gap = size * 2.3;
+  for (let i = 0; i < 5; i++) {
+    const cx = x + size + i * gap;
+    if (i < count) drawStar(ctx, cx, cy, size, color, '#7b1e3b');
+    else drawStar(ctx, cx, cy, size, 'rgba(255,255,255,0.14)', color);
+  }
+  return gap * 5;
+}
+
+/** The caption chip at a panel's foot: place on top, time — tagline below. */
+function drawPanelCaption(ctx, r, panel, grade) {
+  const place = (panel.place || '').trim().toUpperCase();
+  const sub = [panel.time, panel.tag].filter(Boolean).join(' — ').toUpperCase();
+  if (!place && !sub) return;
+  const pad = Math.max(6, Math.round(r.w * 0.02));
+  let pSize = Math.max(10, Math.round(Math.min(r.w, r.h) * 0.055));
+  let sSize = Math.max(8, Math.round(pSize * 0.68));
+  const lines = [];
+  if (place) lines.push({ text: place, weight: 800, color: '#ffffff' });
+  if (sub) lines.push({ text: sub, weight: 700, color: '#ffd166' });
+  const measure = (size, weight, text) => {
+    ctx.font = `${weight} ${size}px Arial, sans-serif`;
+    return ctx.measureText(text).width;
+  };
+  for (let tries = 0; tries < 14; tries++) {
+    const w1 = lines[0] ? measure(pSize, lines[0].weight, lines[0].text) : 0;
+    const w2 = lines[1] ? measure(sSize, lines[1].weight, lines[1].text) : 0;
+    if (Math.max(w1, w2) + pad * 2 <= r.w - 8) break;
+    pSize -= 1;
+    sSize = Math.max(7, Math.round(pSize * 0.68));
+  }
+  lines[0] && (lines[0].size = pSize);
+  lines[1] && (lines[1].size = sSize);
+  const chipW =
+    Math.max(...lines.map((l) => measure(l.size, l.weight, l.text))) + pad * 2;
+  const chipH = pad * 1.2 + lines.reduce((a, l) => a + l.size * 1.25, 0);
+  const x = r.x + Math.max(4, r.w * 0.02);
+  const y = r.y + r.h - chipH - Math.max(4, r.h * 0.02);
+  ctx.save();
+  ctx.fillStyle = 'rgba(8,2,16,0.88)';
+  roundRectPath(ctx, x, y, chipW, chipH, Math.max(3, pad * 0.5));
+  ctx.fill();
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  let ty = y + pad * 0.6;
+  for (const l of lines) {
+    ty += l.size * 0.95;
+    ctx.font = `${l.weight} ${l.size}px Arial, sans-serif`;
+    ctx.fillStyle = l.color;
+    ctx.fillText(l.text, x + pad, ty);
+    ty += l.size * 0.3;
+  }
+  ctx.restore();
+  void grade;
+}
+
+/** A small tilted white sticker naming the panel's character, top-left. */
+function drawCharLabel(ctx, r, label) {
+  const text = (label || '').trim().toUpperCase();
+  if (!text) return;
+  const size = Math.max(9, Math.round(Math.min(r.w, r.h) * 0.045));
+  ctx.save();
+  ctx.font = `800 ${size}px Arial, sans-serif`;
+  const w = ctx.measureText(text).width + size * 1.1;
+  const h = size * 1.7;
+  const x = r.x + Math.max(4, r.w * 0.025);
+  const y = r.y + Math.max(4, r.h * 0.025);
+  ctx.translate(x + w / 2, y + h / 2);
+  ctx.rotate(-0.045);
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = '#12081d';
+  ctx.lineWidth = 2;
+  roundRectPath(ctx, -w / 2, -h / 2, w, h, 3);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#12081d';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 0, size * 0.06);
+  ctx.restore();
+}
+
+/** The "WANTED ★★★★★" pill over the cover's top-right corner. */
+function drawWantedTag(ctx, W, H, z, state) {
+  const stars = state.stars ?? 5;
+  const size = Math.max(11, Math.round(Math.min(W, H) * 0.014));
+  ctx.save();
+  ctx.font = `900 ${size}px Arial, sans-serif`;
+  const wText = ctx.measureText('WANTED').width;
+  const starsW = 5 * size * 0.75 * 2.3;
+  const pad = size * 0.9;
+  const w = wText + size * 0.6 + starsW + pad * 2;
+  const h = size * 2.1;
+  const x = W - z.frame - w - 8;
+  const y = z.frame + 8;
+  ctx.fillStyle = 'rgba(8,2,16,0.92)';
+  roundRectPath(ctx, x, y, w, h, h / 2);
+  ctx.fill();
+  ctx.strokeStyle = '#ffd166';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = '#ffd166';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('WANTED', x + pad, y + h / 2 + 1);
+  drawStarsRow(ctx, x + pad + wText + size * 0.6, y + h / 2, size * 0.75, stars);
+  ctx.restore();
+}
+
+/** The strip above the title band: five stars and a newspaper quote. */
+function drawQuoteStrip(ctx, W, H, z, state) {
+  const quote = (state.quote || '').trim();
+  if (!quote) return;
+  const stars = state.stars ?? 5;
+  const starSize = Math.max(9, z.quoteH * 0.42);
+  const midY = z.quoteY + z.quoteH * 0.58;
+  let qSize = Math.max(11, Math.round(z.quoteH * 0.42));
+  const setFont = (v) => {
+    ctx.font = `700 ${v}px Arial, sans-serif`;
+  };
+  setFont(qSize);
+  const maxW = W * 0.52;
+  while (ctx.measureText(quote).width > maxW && qSize > 9) {
+    qSize -= 1;
+    setFont(qSize);
+  }
+  const qW = ctx.measureText(quote).width;
+  const starsW = 5 * starSize * 2.3;
+  const gap = starSize * 0.9;
+  const totalW = starsW + gap + qW;
+  const x = (W - totalW) / 2;
+  drawStarsRow(ctx, x, midY, starSize, stars);
+  ctx.save();
+  setFont(qSize);
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(quote, x + starsW + gap, midY);
+  ctx.restore();
+}
+
+/** A spiky starburst seal: "ORIGINAL / COVER ART" with a dashed inner ring. */
+function drawStarburst(ctx, cx, cy, r) {
+  const spikes = 16;
+  ctx.save();
+  ctx.beginPath();
+  for (let i = 0; i < spikes * 2; i++) {
+    const ang = (i / (spikes * 2)) * Math.PI * 2 - Math.PI / 2;
+    const rad = i % 2 === 0 ? r : r * 0.78;
+    const x = cx + Math.cos(ang) * rad;
+    const y = cy + Math.sin(ang) * rad;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = '#ffd166';
+  ctx.fill();
+  ctx.strokeStyle = '#ff2e88';
+  ctx.lineWidth = Math.max(2, r * 0.05);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.72, 0, Math.PI * 2);
+  ctx.setLineDash([4, 3]);
+  ctx.strokeStyle = '#7b1e3b';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.setLineDash([]);
+  drawStar(ctx, cx - r * 0.32, cy - r * 0.42, r * 0.08, '#3b115f');
+  drawStar(ctx, cx + r * 0.32, cy - r * 0.42, r * 0.08, '#3b115f');
+  ctx.fillStyle = '#3b115f';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `900 ${r * 0.26}px Arial, sans-serif`;
+  ctx.fillText('ORIGINAL', cx, cy - r * 0.13);
+  ctx.font = `900 ${r * 0.21}px Arial, sans-serif`;
+  ctx.fillText('COVER ART', cx, cy + r * 0.17);
+  ctx.restore();
+}
+
+/** The yellow "EST. 2026" roundel with a dashed ring. */
+function drawRoundel(ctx, cx, cy, r) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffd166';
+  ctx.fill();
+  ctx.strokeStyle = '#12081d';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.8, 0, Math.PI * 2);
+  ctx.setLineDash([3, 3]);
+  ctx.strokeStyle = '#12081d';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#12081d';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `800 ${r * 0.26}px Arial, sans-serif`;
+  ctx.fillText('EST.', cx, cy - r * 0.28);
+  ctx.font = `900 ${r * 0.42}px Arial, sans-serif`;
+  ctx.fillText('2026', cx, cy + r * 0.14);
+  ctx.font = `700 ${r * 0.15}px Arial, sans-serif`;
+  ctx.fillText('★ ★ ★', cx, cy + r * 0.52);
+  ctx.restore();
+}
+
+/** A cyan "VOL. 01" box. */
+function drawVolBadge(ctx, x, y, w, h) {
+  ctx.save();
+  ctx.fillStyle = '#00e5ff';
+  roundRectPath(ctx, x, y, w, h, 4);
+  ctx.fill();
+  ctx.strokeStyle = '#12081d';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = '#12081d';
+  ctx.font = `900 ${h * 0.52}px Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('VOL. 01', x + w / 2, y + h / 2 + 1);
+  ctx.restore();
+}
+
+/** A tilted pink "COLLECTOR'S EDITION" ribbon, anchored at its right end. */
+function drawCollectorRibbon(ctx, rightX, y) {
+  const text = "COLLECTOR'S EDITION";
+  const size = 13;
+  ctx.save();
+  ctx.translate(rightX, y);
+  ctx.rotate(-0.05);
+  ctx.font = `800 ${size}px Arial, sans-serif`;
+  const w = ctx.measureText(text).width + size * 1.6;
+  const h = size * 1.9;
+  ctx.fillStyle = '#ff2e88';
+  ctx.fillRect(-w, -h / 2, w, h);
+  ctx.fillStyle = '#b3006b';
+  ctx.beginPath();
+  ctx.moveTo(-w, -h / 2);
+  ctx.lineTo(-w - h * 0.5, 0);
+  ctx.lineTo(-w, h / 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, -w / 2, 1);
+  ctx.restore();
+}
+
+/** The pink script line under the title: italic serif with a neon glow. */
+function drawScriptLine(ctx, text, cx, baselineY, maxW, size, color) {
+  let s = size;
+  const setFont = (v) => {
+    ctx.font = `italic 700 ${v}px Georgia, "Times New Roman", serif`;
+  };
+  setFont(s);
+  while (ctx.measureText(text).width > maxW && s > 10) {
+    s -= 2;
+    setFont(s);
+  }
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.shadowColor = color;
+  ctx.shadowBlur = s * 0.35;
+  ctx.fillStyle = color;
+  ctx.fillText(text, cx, baselineY);
+  ctx.restore();
+}
+
+/** The tagline strip: gradient band, palms at the edges, centred tagline. */
+function drawTaglineStrip(ctx, W, H, z, state, grade) {
+  const y = z.stripY;
+  const h = z.stripH;
+  const g = ctx.createLinearGradient(0, y, W, y);
+  g.addColorStop(0, grade.bandTop);
+  g.addColorStop(0.5, grade.accent);
+  g.addColorStop(1, grade.bandTop);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, y, W, h);
+  ctx.save();
+  ctx.globalAlpha = 0.85;
+  drawPalm(ctx, W * 0.03, y + h - 2, h * 1.1, grade.palm);
+  drawPalm(ctx, W * 0.97, y + h - 2, h * 0.95, grade.palm, true);
+  ctx.restore();
+  const tag = (state.tagline || '').trim().toUpperCase();
+  if (tag) {
+    drawSpacedLine(ctx, tag, W / 2, y + h * 0.68, W * 0.8, Math.max(10, h * 0.34), '#ffffff');
+  }
+}
+
+/** The dense footer: small print on the left, a procedural barcode on the right. */
+function drawFooter(ctx, W, H, z, state) {
+  const y = z.footY;
+  const h = z.footH;
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, y, W, h);
+  ctx.fillStyle = '#ff5e8a';
+  ctx.fillRect(0, y, W, Math.max(2, h * 0.05));
+  // Barcode: a white plate with seeded black bars and a catalogue number.
+  const bw = Math.max(70, Math.round(W * 0.09));
+  const bh = h * 0.72;
+  const bx = W - z.frame - bw - 6;
+  const by = y + (h - bh) / 2;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(bx, by, bw, bh);
+  const rand = lcg(626);
+  ctx.fillStyle = '#000000';
+  let bx2 = bx + 4;
+  while (bx2 < bx + bw - 4) {
+    const wbar = 1 + Math.floor(rand() * 3);
+    if (rand() > 0.42) ctx.fillRect(bx2, by + 3, wbar, bh * 0.6);
+    bx2 += wbar + 1 + Math.floor(rand() * 2);
+  }
+  ctx.font = `700 ${Math.max(7, Math.round(bh * 0.2))}px Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText('VC-0626', bx + bw / 2, by + bh - 2);
+  // Small print, shrinking until it fits before the barcode.
+  const text = (state.footer || '').trim().toUpperCase();
+  if (text) {
+    let fSize = Math.max(8, Math.round(h * 0.24));
+    const setFont = (v) => {
+      ctx.font = `700 ${v}px Arial, sans-serif`;
+    };
+    setFont(fSize);
+    const maxW = bx - z.frame - 16;
+    while (ctx.measureText(text).width > maxW && fSize > 7) {
+      fSize -= 1;
+      setFont(fSize);
+    }
+    ctx.save();
+    ctx.fillStyle = '#c9b8d8';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    if ('letterSpacing' in ctx) ctx.letterSpacing = '1px';
+    ctx.fillText(text, z.frame + 8, y + h / 2 + 1);
+    ctx.restore();
+    if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+  }
+}
+
 /** The lettering band across the foot of the cover: eyebrow, title, subtitle. */
-function drawTitleBand(ctx, W, H, state, grade) {
-  const bandH = Math.round(H * 0.2);
-  const bandY = H - bandH;
-  const band = ctx.createLinearGradient(0, bandY, 0, H);
+function drawTitleBand(ctx, W, H, z, state, grade) {
+  const bandY = z.bandY;
+  const bandH = z.bandH;
+  const band = ctx.createLinearGradient(0, bandY, 0, bandY + bandH);
   band.addColorStop(0, grade.bandTop);
   band.addColorStop(1, grade.bandBot);
   ctx.fillStyle = band;
@@ -393,16 +764,32 @@ function drawTitleBand(ctx, W, H, state, grade) {
   // Palm silhouettes at the band's edges, behind the lettering.
   ctx.save();
   ctx.globalAlpha = 0.9;
-  drawPalm(ctx, W * 0.035, H - bandH * 0.04, bandH * 0.95, grade.palm);
-  drawPalm(ctx, W * 0.965, H - bandH * 0.04, bandH * 0.8, grade.palm, true);
+  drawPalm(ctx, W * 0.035, bandY + bandH - bandH * 0.04, bandH * 0.95, grade.palm);
+  drawPalm(ctx, W * 0.965, bandY + bandH - bandH * 0.04, bandH * 0.8, grade.palm, true);
   ctx.restore();
   drawHalftone(ctx, W - bandH * 0.46, bandY + bandH * 0.1, bandH * 0.36, bandH * 0.3, grade.accent);
-  drawSpacedLine(ctx, 'VICE COAST COVER STUDIO', W / 2, bandY + bandH * 0.24, W * 0.7, Math.max(10, bandH * 0.105), grade.accent);
+  drawSpacedLine(ctx, 'VICE COAST COVER STUDIO', W / 2, bandY + bandH * 0.2, W * 0.7, Math.max(10, bandH * 0.105), grade.accent);
   const title = (state.title || '').trim().toUpperCase() || 'VICE COAST';
-  drawTitleText(ctx, title, W / 2, bandY + bandH * 0.7, W * 0.82, bandH * 0.46, grade);
-  const sub = (state.subtitle || '').trim().toUpperCase();
+  drawTitleText(ctx, title, W / 2, bandY + bandH * 0.62, W * 0.74, bandH * 0.42, grade);
+  const sub = (state.subtitle || '').trim();
   if (sub) {
-    drawSpacedLine(ctx, sub, W / 2, bandY + bandH * 0.93, W * 0.72, Math.max(9, bandH * 0.13), grade.accent);
+    drawScriptLine(ctx, sub, W / 2, bandY + bandH * 0.9, W * 0.62, Math.max(12, bandH * 0.2), grade.accent);
+  }
+  // Badges, each toggleable from the editor.
+  const badges = state.badges || {};
+  if (badges.vol) {
+    drawVolBadge(ctx, z.frame + 10, bandY + 10, Math.max(72, W * 0.11), Math.max(22, bandH * 0.17));
+  }
+  if (badges.est) {
+    drawRoundel(ctx, z.frame + bandH * 0.34 + 14, bandY + bandH * 0.62, bandH * 0.34);
+  }
+  if (badges.collector) {
+    drawCollectorRibbon(ctx, W - z.frame - 4, bandY + bandH - 16);
+  }
+  if (badges.seal) {
+    // Far right of the title band, clear of the title and the quote above it.
+    const r = Math.min(W, H) * 0.05;
+    drawStarburst(ctx, W - z.frame - r - 6, bandY + bandH * 0.3, r);
   }
 }
 
@@ -424,9 +811,10 @@ function drawGrain(ctx, W, H) {
  */
 export function drawCover(ctx, W, H, state) {
   const grade = GRADES[state.grade] || GRADES.sunset;
-  const layout = LAYOUTS[state.layout] || LAYOUTS.duo;
+  const layout = LAYOUTS[state.layout] || LAYOUTS.show;
+  const z = coverZones(W, H);
   ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = grade.edge;
+  ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, W, H);
   const corner = Math.min(14, Math.round(Math.min(W, H) * 0.012));
   const panels = layout.panels(W, H);
@@ -440,17 +828,28 @@ export function drawCover(ctx, W, H, state) {
     else drawScene(ctx, r, grade);
     applyWash(ctx, r, grade);
     drawVignette(ctx, r);
+    drawPanelCaption(ctx, r, panel, grade);
+    if (panel.label) drawCharLabel(ctx, r, panel.label);
     ctx.restore();
     if (layout.id !== 'full') {
-      ctx.strokeStyle = grade.panelLine;
+      ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = Math.max(2, Math.min(W, H) * 0.003);
       roundRectPath(ctx, r.x, r.y, r.w, r.h, corner);
       ctx.stroke();
     }
   });
-  drawTitleBand(ctx, W, H, state, grade);
+  const badges = state.badges || {};
+  if (badges.wanted) drawWantedTag(ctx, W, H, z, state);
+  drawQuoteStrip(ctx, W, H, z, state);
+  drawTitleBand(ctx, W, H, z, state, grade);
+  drawTaglineStrip(ctx, W, H, z, state, grade);
+  drawFooter(ctx, W, H, z, state);
+  // Outer frame: an accent line at the very edge and a thin white line inside.
   ctx.strokeStyle = grade.accent;
   ctx.lineWidth = Math.max(3, Math.min(W, H) * 0.004);
   ctx.strokeRect(2, 2, W - 4, H - 4);
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(z.frame - 1, z.frame - 1, W - 2 * z.frame + 2, H - 2 * z.frame + 2);
   drawGrain(ctx, W, H);
 }
